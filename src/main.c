@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#define ArrayCount(arr) (sizeof(arr) / sizeof(arr[0]))
+
 #define KB(size) (1024 * size)
 #define MB(size) (1024 * KB(size))
 #define GB(size) (1024 * MB(size))
@@ -20,41 +22,51 @@
 #define DestroyTempAlloc() \
   free(tempAllocPointer);  \
   tempAllocSize = 0;
+
+typedef unsigned char u8;
+typedef signed char s8;
+typedef unsigned short u16;
+typedef signed short s16;
+typedef unsigned int u32;
+typedef signed int s32;
+typedef unsigned long long u64;
+typedef signed long long s64;
+
 static char *tempAllocPointer = NULL;
 static char *nextTempPointer = NULL;
 static size_t tempAllocSize = 0;
 
-static char *ReadFile(char *fileName, size_t* fileSize)
+static u8 *ReadFile(const char *fileName, size_t *fileSize)
 {
-  char *result = NULL;
+  u8 *result = NULL;
   FILE *file = NULL;
-  fileSize = 0;
+  size_t size = 0;
   fopen_s(&file, fileName, "r");
   if (file)
   {
     fseek(file, 0, SEEK_END);
-    fileSize = ftell(file);
+    size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    result = malloc(fileSize + 1);
+    result = malloc(size + 1);
     if (result)
     {
       size_t i;
-      int c = getc(file);
-      for (i = 0; i < fileSize && !(c == '\0' || c == EOF); i++, c = getc(file))
+      u32 c = getc(file);
+      for (i = 0; i < size && !(c == '\0' || c == EOF); i++, c = getc(file))
       {
-        result[i] = (char)c;
+        result[i] = (u8)c;
       }
       result[i] = '\0';
     }
 
     fclose(file);
   }
-
+  *fileSize = size;
   return result;
 }
 
-static char *GetOpName(char opCode)
+static char *GetOpName(u32 opCode)
 {
   switch (opCode)
   {
@@ -68,6 +80,34 @@ static char *GetOpName(char opCode)
   }
 }
 
+static char *GetRegName(u32 regNumber)
+{
+  static char *registers[] = {
+      "al", // 0b00000000
+      "ax", // 0b00000001
+      "cl", // 0b00000010
+      "cx", // 0b00000011
+      "dl", // 0b00000100
+      "dx", // 0b00000101
+      "bl", // 0b00000110
+      "bx", // 0b00000111
+      "ah", // 0b00001000
+      "sp", // 0b00001001
+      "ch", // 0b00001010
+      "bp", // 0b00001011
+      "dh", // 0b00001100
+      "si", // 0b00001101
+      "bh", // 0b00001111
+      "di", // 0b00001111
+  };
+
+  if (regNumber > ArrayCount(registers))
+  {
+    return NULL;
+  }
+  return registers[regNumber];
+}
+
 int main(int argc, char **argv)
 {
   // CreateTempAlloc(MB(16));
@@ -75,32 +115,47 @@ int main(int argc, char **argv)
   if (argc > 1)
   {
     size_t fileSize = 0;
-    char *fileContents = ReadFile(argv[1], &fileSize);
+    u8 *fileContents = ReadFile(argv[1], &fileSize);
     if (fileContents == NULL)
     {
       printf("Couldn't open file: %s", argv[1]);
     }
     else
     {
-      char byte1 = *fileContents;
-      char byte2 = *fileContents + 1;
-
-      char* opName = GetOpName(byte1 >> 2);
-      if(opName == NULL)
+      for (size_t i = 0; i < fileSize; i += 2)
       {
-        printf("Couldn't find op for opCode: %d", byte1);
-      }
-      else
-      {
-        printf("%s ", opName);
-      }
 
-      char regName = NULL;
-      int D = byte1 >> 1 & 1;
-      int W = byte1 & 1;
-      int MOD = byte2 >> 6;
-      int REG = byte2 >> 3 & (-1 << 3);
-      int RM = byte2 & (-1 << 3);
+        u32 byte1 = *(fileContents + i);
+        u32 byte2 = *(fileContents + i + 1);
+
+        char *opName = GetOpName(byte1 >> 2);
+        if (opName == NULL)
+        {
+          printf("Couldn't find op for opCode: %d", byte1);
+        }
+        else
+        {
+          printf("%s ", opName);
+        }
+
+        u32 D = byte1 >> 1 & 1;
+        u32 W = byte1 & 1;
+        u32 MOD = byte2 >> 6;
+        u32 REG = byte2 >> 3 & ~(-1 << 3);
+        u32 RM = byte2 & ~(-1 << 3);
+        char *regName = GetRegName(REG << 1 | W);
+        char *rmName = GetRegName(RM << 1 | W);
+        if (D)
+        {
+          printf("%s, ", regName);
+          printf("%s\n", rmName);
+        }
+        else
+        {
+          printf("%s, ", rmName);
+          printf("%s\n", regName);
+        }
+      }
     }
   }
 
